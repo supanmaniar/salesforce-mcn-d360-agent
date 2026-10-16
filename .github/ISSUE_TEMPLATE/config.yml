@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/supanmaniar/salesforce-mcn-d360-agent/security/advisories/new
+    about: Please report security issues privately — do not open a public issue.
+  - name: Setup help (Salesforce CLI)
+    url: https://github.com/supanmaniar/salesforce-mcn-d360-agent/blob/main/README.md#quick-start
+    about: Authenticating the CLI and pointing the agent at your org.
+  - name: API routing problems
+    url: https://github.com/supanmaniar/salesforce-mcn-d360-agent/blob/main/README.md#api-routing
+    about: The three API families do not share a host — this is the most common failure.
+  - name: Contributing guide
+    url: https://github.com/supanmaniar/salesforce-mcn-d360-agent/blob/main/CONTRIBUTING.md
+    about: How to add a skill or refresh the endpoint catalog.

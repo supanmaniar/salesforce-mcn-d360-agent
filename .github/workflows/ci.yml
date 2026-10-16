@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate skills, agents, links, catalog, and secrets
+        run: node scripts/validate.mjs
+
+      - name: Check the endpoint index is up to date
+        run: |
+          node scripts/catalog-search.mjs index > /tmp/ENDPOINT-INDEX.md
+          if ! diff -q catalog/ENDPOINT-INDEX.md /tmp/ENDPOINT-INDEX.md >/dev/null; then
+            echo "::error::catalog/ENDPOINT-INDEX.md is stale. Regenerate with:"
+            echo "  node scripts/catalog-search.mjs index > catalog/ENDPOINT-INDEX.md"
+            diff catalog/ENDPOINT-INDEX.md /tmp/ENDPOINT-INDEX.md | head -40
+            exit 1
+          fi
+
+      - name: Catalog search smoke test
+        run: |
+          node scripts/catalog-search.mjs stats > /dev/null
+          node scripts/catalog-search.mjs groups > /dev/null
+          node scripts/catalog-search.mjs list --family mc-next --limit 1 > /dev/null
+          node scripts/catalog-search.mjs describe content.search-content-in-workspace > /dev/null
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ShellCheck
+        run: shellcheck scripts/*.sh
