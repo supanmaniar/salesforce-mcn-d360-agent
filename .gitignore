@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# Local scratch space used by the caching guidance in the async skill
+.cache/
+
+# Salesforce CLI artifacts
+.sf/
+.sfdx/
