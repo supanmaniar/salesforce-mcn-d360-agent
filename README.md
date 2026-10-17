@@ -9,8 +9,8 @@
 [![No MCP](https://img.shields.io/badge/MCP-not%20required-success)](#why-no-mcp)
 
 A **GitHub Copilot agent** for Salesforce **Marketing Cloud Next** and **Data 360**
-administration. It runs entirely on the **Salesforce CLI** — no MCP server, no Connected
-App, no client secret.
+administration. It runs on the **Salesforce CLI** — no MCP server, and no credentials
+for two of the three API families.
 
 Ask Copilot to list your Data 360 segments, add a custom field, query records, or debug a
 data stream, and it does the work through the `sf` session you already have.
@@ -20,8 +20,21 @@ data stream, and it does the work through the `sf` session you already have.
 - **445 API endpoints** across 3 families and 44 resource groups, from a generated catalog
 - **7 skills** covering all 30 tools of the equivalent MCP server
 - **1 custom agent** — pick it from the agent selector, or just ask a Salesforce question
-- **Zero credentials** — reuses your `sf` CLI session
-- **Zero setup** beyond `sf org login web`
+- **Zero credentials** for `mc-next` and `data360-connect` — reuses your `sf` CLI session
+- **One exception** — the `data360` core APIs (`/api/v1`, `/api/v2`) need a Connected App
+
+> **Note on the third family.** The Data 360 tenant host accepts only an OAuth
+> client-credentials **JWT**; the CLI session token is opaque and is rejected with
+> HTTP 400. `data360` therefore needs a Connected App — see
+> [Connected App setup](docs/CONNECTED-APP-SETUP.md). Everything else runs on
+> `sf org login` alone.
+
+**Setup**
+
+| Family | Setup needed |
+| --- | --- |
+| `mc-next`, `data360-connect` | `sf org login web` |
+| `data360` | the above, plus `DATA360_TENANT_URL` and a Connected App |
 
 ---
 
@@ -31,16 +44,22 @@ The sibling project [`mc-next-mcp-server`](https://github.com/supanmaniar/salesf
 exposes the same APIs as an MCP server. That works, but it means running a Node process,
 configuring a client, and managing OAuth credentials.
 
-This repo takes the other path: the agent calls the Salesforce CLI directly. You get the
-same 445 endpoints and 30 capabilities with nothing to install or configure.
+This repo takes the other path: the agent calls the Salesforce CLI directly. For the
+content and segment APIs — most day-to-day work — that means nothing to install
+and nothing to configure.
 
 | | MCP server | This agent |
 | --- | --- | --- |
-| Setup | Install, configure client, create Connected App | `sf org login web` |
-| Credentials | Client id + secret | None — reuses the CLI session |
+| Setup | Install, configure client, create Connected App | `sf org login web` (plus a Connected App for `data360`) |
+| Credentials | Client id + secret | None for `mc-next` / `data360-connect`; a Connected App for `data360` |
 | Runs as | A background process | Nothing extra |
-| Identity | An integration user | **You** |
+| Identity | An integration user | **You** (or the app's Run As user for `data360`) |
 | Works in CI | Yes | Yes (with `sf org login jwt`) |
+
+The honest version of the comparison: the two families that serve content and
+segments need nothing beyond `sf org login`, and that is most day-to-day work.
+The `data360` core query APIs are the exception, and they need a Connected App in
+the MCP server too — so that family is not a regression, just not a saving.
 
 ---
 
@@ -195,14 +214,52 @@ CI fails if the index is stale.
 
 ---
 
-## Development
+## What we found the platform actually does
+
+Every claim in the skills was tested against a live org. Several things behave
+unlike the documentation suggests, and each is documented where you would hit it.
+
+| Behaviour | What happens | Where |
+| --- | --- | --- |
+| The tenant host rejects session tokens | Opaque token -> **HTTP 400 with an empty body**, not 401 | [CONNECTED-APP-SETUP.md](docs/CONNECTED-APP-SETUP.md) |
+| Unrecognised query params are ignored | The API applies its own default, so a typo returns a plausible-but-wrong result | `check-query-params.mjs` warns before the request |
+| `EntityDefinition` never lists Data 360 objects | Returns **zero rows**, not an error, in an org with 1,067 DMOs | [platform-soql](.github/skills/platform-soql/SKILL.md) |
+| Defined is not materialised | **1,067** DMOs existed; only **45** were queryable | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
+| Data objects reject all DML | `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` — a property of the object, not your permissions | [records-crud](.github/skills/records-crud/SKILL.md) |
+| `destructive: no` is not a green light | `POST /connect/cms/spaces` creates a workspace with **no delete route** | [Safety](#safety) |
+| Catalog optional flags can lie | `/ssot/connections` marks `connectorType` optional; the API requires it | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
+
+Two of these are worth calling out:
+
+**The 400-vs-401 split is the useful diagnostic.** On the Data 360 tenant host, a
+*missing* credential returns 401, but a token that is not a JWT returns **400**. The
+status tracks the number of dot-separated segments, so `./scripts/diagnose.sh` uses it
+to tell "wrong token type" from "expired token".
+
+**Irreversible creation is not flagged anywhere.** The catalog's `destructive` flag
+describes the verb, not the outcome — a POST destroys nothing, so it reads `no` even
+when what it creates cannot be removed. The agent checks for a matching DELETE before
+creating a resource.
+
+---
+
+## Development and CI
 
 ```bash
-node scripts/validate.mjs   # skills, agents, links, catalog, secrets
+node scripts/validate.mjs   # 8 checks: skills, links, catalog, secrets, drift, writability
 shellcheck scripts/*.sh     # shell lint
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a skill or refresh the catalog.
+`validate.mjs` needs **no org connection**. Checks that would normally require live
+data compare against recorded fixtures in `catalog/describe-fixtures.json`, which
+`scripts/record-describe.mjs` refreshes.
+
+It verifies things that have silently drifted before:
+
+- the resource-group table in `data360-connect-api` matches the generated catalog
+- skills' writability claims match what `sobject describe` actually reports
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to tell a moved platform from broken docs.
 
 ---
 
