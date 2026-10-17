@@ -39,6 +39,9 @@
 #   -i, --include          Include HTTP status and headers (instance mode only).
 #   -h, --help             Show this help.
 #
+# Tenant mode needs a JWT: export SF_TENANT_TOKEN (see scripts/sf-tenant-token.sh).
+# The CLI session token is opaque and the Data 360 mesh rejects it with HTTP 400.
+#
 # Exit codes: 0 success, 1 usage/config error, 2 HTTP error, 3 CLI error.
 
 set -euo pipefail
@@ -131,8 +134,20 @@ if [[ "$TENANT" -eq 1 ]]; then
     die "tenant mode needs a host. Set DATA360_TENANT_URL (e.g. https://my-tenant.c360a.salesforce.com) or pass --tenant-url." 1
   fi
   TENANT_URL="${TENANT_URL%/}"
-  TOKEN="$(read_field accessToken)"
-  [[ -n "$TOKEN" ]] || die "org '$ORG' reported no accessToken." 3
+  # Prefer an OAuth client-credentials JWT (SF_TENANT_TOKEN) when present: the
+  # Data 360 mesh rejects the opaque CLI session token with HTTP 400. Fall back
+  # to the session token so the failure is still visible with a clear message.
+  if [[ -n "${SF_TENANT_TOKEN:-}" ]]; then
+    TOKEN="$SF_TENANT_TOKEN"
+  else
+    TOKEN="$(read_field accessToken)"
+    [[ -n "$TOKEN" ]] || die "org '$ORG' reported no accessToken." 3
+    if [[ -z "${SF_TENANT_TOKEN_WARNED:-}" ]]; then
+      printf 'sf-api: warning: no SF_TENANT_TOKEN set; using the CLI session token.\n' >&2
+      printf 'sf-api:          the Data 360 mesh rejects session tokens (HTTP 400).\n' >&2
+      printf 'sf-api:          Run scripts/sf-tenant-token.sh for a client-credentials JWT.\n' >&2
+    fi
+  fi
 
   URL="${TENANT_URL}${PATH_ARG}"
   [[ -n "$QUERY" ]] && URL="${URL}?${QUERY}"

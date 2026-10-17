@@ -84,7 +84,11 @@ The `mc-next` and `data360-connect` families do not need this.
 | [catalog/ENDPOINT-INDEX.md](catalog/ENDPOINT-INDEX.md) | Condensed markdown index |
 | [scripts/catalog-search.mjs](scripts/catalog-search.mjs) | Discover and describe endpoints |
 | [scripts/sf-api.sh](scripts/sf-api.sh) | Authenticated REST calls via the CLI |
+| [scripts/sf-tenant-token.sh](scripts/sf-tenant-token.sh) | Mint a Connected App token for the Data 360 family |
+| [scripts/diagnose.sh](scripts/diagnose.sh) | Work out why a Data 360 call is failing |
 | [scripts/validate.mjs](scripts/validate.mjs) | Repo integrity checks (runs in CI) |
+| [docs/CONNECTED-APP-SETUP.md](docs/CONNECTED-APP-SETUP.md) | Create the app the `data360` family needs |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Diagnosing 400s, 401s, and 404s |
 
 ---
 
@@ -109,15 +113,37 @@ until it is relevant.
 
 The three families do **not** share a host. This is the most common source of errors:
 
-| Family | Endpoints | Path prefix | Host | Invocation |
-| --- | --- | --- | --- | --- |
-| `mc-next` | 27 | `/connect/cms/...` | org instance | `./scripts/sf-api.sh --path ...` |
-| `data360-connect` | 383 | `/ssot/...` | org instance | `./scripts/sf-api.sh --path ...` |
-| `data360` | 35 | `/api/v1`, `/api/v2` | Data 360 tenant | `./scripts/sf-api.sh --tenant --path ...` |
+| Family | Endpoints | Path prefix | Host | Auth | Invocation |
+| --- | --- | --- | --- | --- | --- |
+| `mc-next` | 27 | `/connect/cms/...` | org instance | CLI session | `./scripts/sf-api.sh --path ...` |
+| `data360-connect` | 383 | `/ssot/...` | org instance | CLI session | `./scripts/sf-api.sh --path ...` |
+| `data360` | 35 | `/api/v1`, `/api/v2` | Data 360 tenant | **Connected App JWT** | `./scripts/sf-api.sh --tenant --path ...` |
 
 `sf api request rest` always prefixes the org instance and **ignores absolute URLs**, so
-the `data360` family goes through tenant mode, which reads a token from `sf org display`
-and calls the host with `curl`.
+the `data360` family goes through tenant mode.
+
+The Data 360 tenant host only accepts a client-credentials **JWT**. The `sf org login`
+session token is opaque, and the tenant's mesh gateway rejects it with **HTTP 400 and an
+empty body**. So `data360` is the one family that needs a Connected App:
+
+```bash
+eval "$(./scripts/sf-tenant-token.sh --export)"     # mint a client-credentials JWT
+./scripts/sf-api.sh --tenant --path /api/v1/metadata
+```
+
+See [Connected App setup](docs/CONNECTED-APP-SETUP.md) to create the app, and
+[Troubleshooting](docs/TROUBLESHOOTING.md) if you are seeing 400s.
+
+### Diagnosing connectivity
+
+```bash
+SF_TARGET_ORG=my-org \
+DATA360_TENANT_URL=https://<tenant>.c360a.salesforce.com \
+./scripts/diagnose.sh
+```
+
+This probes each family and interprets the status codes — notably the difference between
+**400** (credential is not a JWT) and **401** (JWT was parsed and rejected).
 
 ---
 
@@ -133,7 +159,13 @@ node scripts/catalog-search.mjs groups
 # Call an endpoint
 ./scripts/sf-api.sh --path /ssot/segments --query 'batchSize=20'
 ./scripts/sf-api.sh --method POST --path /ssot/segments --body @payload.json
+
+# Data 360 core APIs need a Connected App token (see docs/CONNECTED-APP-SETUP.md)
+eval "$(./scripts/sf-tenant-token.sh --export)"
 ./scripts/sf-api.sh --tenant --path /api/v1/metadata
+
+# Check connectivity across all three families
+./scripts/diagnose.sh
 
 # Native sf commands work too
 sf data query --query "SELECT Id, Name FROM Account LIMIT 5" -o "$SF_TARGET_ORG" --json

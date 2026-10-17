@@ -205,7 +205,12 @@ const SECRET_PATTERNS = [
   { name: 'GitHub token', re: /\bgh[pousr]_[A-Za-z0-9]{20,}/ },
   { name: 'AWS access key', re: /\bAKIA[0-9A-Z]{16}\b/ },
   { name: 'Private key block', re: /-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
-  { name: 'Hardcoded client secret', re: /client_?secret\s*[:=]\s*['"][^'"]{12,}['"]/i },
+  {
+    name: 'Hardcoded client secret',
+    // Only a literal counts. Values that are shell variable references
+    // (`${SF_CLIENT_SECRET:-}`), env lookups, or placeholders are not secrets.
+    re: /client_?secret\s*[:=]\s*['"](?!\$|%|\{\{)[^'"\s]{12,}['"]/i,
+  },
 ];
 
 function checkSecrets() {
@@ -235,7 +240,7 @@ function checkSecrets() {
 /* -------------------------------------------------------------------------- */
 
 function checkScriptModes() {
-  for (const name of ['sf-api.sh', 'catalog-search.mjs', 'validate.mjs']) {
+  for (const name of ['sf-api.sh', 'sf-tenant-token.sh', 'diagnose.sh', 'catalog-search.mjs', 'validate.mjs']) {
     const p = join(ROOT, 'scripts', name);
     if (!existsSync(p)) {
       fail('scripts', `scripts/${name} is missing`);
