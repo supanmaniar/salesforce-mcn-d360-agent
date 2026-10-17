@@ -60,24 +60,68 @@ Use [sf-api.sh](../../../scripts/sf-api.sh) in its default (instance) mode. Do
 
 ## Resource Groups
 
-The 35 groups, by endpoint count:
+The 35 groups, by endpoint count, with the write surface each exposes. Generated
+from the catalog — run `node scripts/catalog-search.mjs groups` for the live list.
 
-| Group | Endpoints | Group | Endpoints |
-| --- | --- | --- | --- |
-| Data Governance | 59 | Data Streams | 12 |
-| Machine Learning | 37 | Data Model Objects | 11 |
-| Notebook AI | 35 | Data Actions | 10 |
-| Connections | 23 | Data Action Targets | 9 |
-| Activations | 20 | Data Transforms | 9 |
-| Segments | 19 | Data Kits | 8 |
-| Identity Resolutions | 17 | Data Shares | 8 |
-| Calculated Insights | 16 | Data Spaces | 8 |
-| Connectors | 15 | Document AI | 7 |
-| Data Lake Objects | 14 | Insights | 6 |
-| Metadata | 13 | Search Index | 5 |
-| Activation Targets | 12 | Others | — |
+| Group | Endpoints | Write | Group | Endpoints | Write |
+| --- | ---: | --- | --- | ---: | --- |
+| Data Governance | 59 | ✅ | Activation Platforms | 13 | ✅ |
+| Machine Learning | 37 | ✅ | Data Shares | 11 | ✅ |
+| Notebook AI | 35 | ✅ | Data Kits | 10 | ✅ |
+| Connections | 23 | ✅ | Document AI | 10 | ✅ |
+| Activations | 21 | ✅ | Segments | 10 | ✅ |
+| Clean Rooms | 19 | ✅ | Data Graphs | 8 | ✅ |
+| Activation Targets | 16 | ✅ | Data Spaces | 8 | ✅ |
+| Data Model Objects | 14 | ✅ | Metadata | 8 | read-only |
+| Data Transforms | 14 | ✅ | Calculated Insights | 6 | ✅ |
+| Activation External Platforms | 2 | read-only | Data Streams | 6 | ✅ |
+| Agent Configuration | 4 | ✅ | Identity Resolutions | 6 | ✅ |
+| Private Network Routes | 4 | ✅ | Profile | 6 | read-only |
+| Query (Current) | 4 | ✅ | Search Index | 6 | ✅ |
+| Insights | 3 | read-only | Data Action Targets | 5 | ✅ |
+| Query V1 & V2 | 3 | create only | Data Lake Objects | 5 | ✅ |
+|  |  |  | Connectors | 2 | read-only |
+| Data Actions | 2 | create only | Auth | 1 | read-only |
+| Universal ID Lookup | 1 | read-only | Limits | 1 | read-only |
 
-Run `node scripts/catalog-search.mjs groups` for the authoritative list.
+Read-only groups expose no `POST`/`PATCH`/`PUT`/`DELETE` at all. "create only"
+means `POST` exists but no update or delete.
+
+### Measured reachability
+
+Not every catalogued endpoint is reachable in every org. Probing one read per
+group against a live org returned **27 of 35 reachable**, with these exceptions:
+
+| Group | Read result | Cause |
+| --- | --- | --- |
+| Data Governance | `NOT_FOUND` on all 8 paramless GETs | Feature not enabled in this org |
+| Activation Platforms | `NOT_FOUND` on every path and method | Feature not enabled; use `/ssot/activation-external-platforms` |
+| Data Kits | `INTERNAL_SERVER_ERROR` | Server-side null dereference — a Salesforce bug, not an auth issue |
+
+Provisioning state varies by org, so treat a `NOT_FOUND` as "not enabled here"
+rather than "wrong path". Verify the feature exists before assuming a typo.
+
+### Query — this is how you read Data 360 records
+
+The two query groups are the data-access path, and both work:
+
+| Group | Endpoint | Style |
+| --- | --- | --- |
+| Query (Current) | `POST /ssot/query-sql` | Rows as positional arrays |
+| Query V1 & V2 | `POST /ssot/query` | Rows as named objects |
+
+```bash
+./scripts/sf-api.sh --method POST --path /ssot/query \
+  --body '{"sql":"SELECT ssot__Id__c FROM ssot__Individual__dlm LIMIT 2"}'
+```
+
+Both execute real SQL and return rows. `query-sql` returns `data` as arrays with
+a parallel `metadata` array; `/ssot/query` returns objects keyed by field name.
+
+**CRUD applies here exactly as it does at the sObject layer: read only.** The
+`POST` is an RPC-style body for submitting SQL, not a create. SQL is limited to
+`SELECT` — there is no DML through these endpoints, matching the record-level
+read-only behaviour of DMOs and DLOs. Writes go through the Ingestion API.
 
 ## Common Operations
 
