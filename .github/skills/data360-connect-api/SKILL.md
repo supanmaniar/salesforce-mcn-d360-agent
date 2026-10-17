@@ -1,6 +1,6 @@
 ---
 name: data360-connect-api
-description: 'Call Salesforce Data 360 Connect APIs (data streams, segments, activations, identity resolutions, connections, data spaces, data kits, calculated insights, machine learning, clean rooms, data governance, data model objects) from the Salesforce CLI without an MCP server. Use when managing Data 360 data streams, building or activating segments, configuring identity resolution, enumerating data model objects (DMOs) or the data model, or working with any /ssot endpoint.'
+description: 'Call Salesforce Data 360 Connect APIs (data streams, segments, activations, identity resolutions, connections, data spaces, data kits, calculated insights, machine learning, clean rooms, data governance, data model objects, data lake objects) from the Salesforce CLI without an MCP server. Use when managing Data 360 data streams, building or activating segments, configuring identity resolution, enumerating data model objects (DMOs) or data lake objects (DLOs), or working with any /ssot endpoint.'
 ---
 
 # Data 360 Connect API
@@ -151,13 +151,31 @@ Verify that ssot__AgentWork__dlm exists and has been mapped.
 "Has been mapped" is the operative phrase: the object needs an object mapping
 (`/ssot/data-model-object-mappings`) before it can hold or return data.
 
-Also note that DMOs are **absent from `EntityDefinition`** entirely, so
-`SELECT ... FROM EntityDefinition WHERE QualifiedApiName LIKE '%__dlm'` returns
-zero rows even in an org full of DMOs. See
-[platform-soql](../platform-soql/SKILL.md).
+**The listing response has no total.** `/ssot/data-model-objects` returns
+`{"dataModelObject": [...]}` with no `totalSize` and no `nextPageUrl`, so the
+count is only obtainable by paging to exhaustion. Its sibling
+`/ssot/data-lake-objects` *does* return `totalSize` — do not assume consistency.
 
 Measurements from a real org, to give a sense of the gap: **1,067** DMOs defined
 against **45** materialised and queryable.
+
+### Data lake objects
+
+DLOs use the suffix `__dll` and are enumerated by `GET /ssot/data-lake-objects`,
+which returns `totalSize` (60 in the org measured). They are **queryable but
+invisible to sObject enumeration**: `SELECT Id FROM Account_Home__dll` works and
+`sf sobject describe -s Account_Home__dll` returns 119 fields, yet the object
+appears in neither `sf sobject list` nor `EntityDefinition`. Never conclude a
+DLO does not exist because a listing omits it.
+
+`SELECT COUNT()` is **not supported on DLOs**:
+
+```text
+UNSUPPORTED_QUERY: SELECT COUNT() is not supported by Account_Home__dll.
+```
+
+Use `SELECT Id ... LIMIT n` and page, or read `totalSize` from the listing
+endpoint. `SELECT COUNT()` on a DMO works normally.
 
 ## Gotchas
 
@@ -187,9 +205,34 @@ against **45** materialised and queryable.
 
   Never report a count that could have been truncated by an unnoticed default.
 
-- **DMOs are absent from `EntityDefinition` and from most sObject tooling.** Use
-  `/ssot/data-model-objects` for definitions and `sf sobject list` for
-  materialised objects; do not use one to answer the other's question.
+- **DMOs and DLOs are absent from `EntityDefinition` and from most sObject
+  tooling.** Use `/ssot/data-model-objects` for definitions, `sf sobject list`
+  for one subset of materialised objects, and `/ssot/data-lake-objects` for
+  DLOs. No single surface is a superset of the others.
+- **Data 360 records are read-only over REST and SOQL.** All 45 materialised DMOs
+  report `createable=false, updateable=false, deletable=false, queryable=true` —
+  unanimously, with no exceptions. Attempts are rejected server-side:
+
+  ```text
+  POST   /sobjects/ssot__Individual__dlm       -> CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY
+  PATCH  /sobjects/ssot__Individual__dlm/{Id}  -> CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY
+  DELETE /sobjects/ssot__Individual__dlm/{Id}  -> CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY
+  ```
+
+  **Write capability exists at the definition layer, not the record layer.** You
+  can create/update/delete DMO and DLO *definitions* and mappings via the `/ssot`
+  endpoints above, but you cannot write the *records* they hold. Data enters via
+  the Ingestion API on the tenant host (`data360` family,
+  [data360-api](../data360-api/SKILL.md)) — not via sObject DML.
+
+  If a user asks to insert or update Data 360 records, the answer is "not this
+  way"; route them to the Ingestion API rather than attempting DML.
+- **`SELECT COUNT()` is unsupported on DLOs** (`__dll`), though it works on DMOs.
+  Page with `SELECT Id ... LIMIT n` or read `totalSize` from the listing
+  endpoint.
+- **`/ssot/data-model-objects` returns no `totalSize`.** Page until a short page
+  comes back; do not assume a single call gives you everything, and do not
+  assume the default page size matches other endpoints.
 - **`orderByExpression` uses bracket syntax**, e.g. `[Name asc]`.
 - **Some operations are asynchronous** (segment publish, data transforms,
   ML predictions). See [async-jobs-and-cache](../async-jobs-and-cache/SKILL.md).

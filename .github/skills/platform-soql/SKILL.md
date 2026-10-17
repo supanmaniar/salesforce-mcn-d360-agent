@@ -1,6 +1,6 @@
 ---
 name: platform-soql
-description: 'Query and explore a Salesforce org from the CLI: run SOQL, paginate results, list and describe sObjects, call arbitrary REST endpoints, and check org limits. Use when you need to query records, inspect object schemas, explore the REST API, or check API and storage limits without an MCP server. Note that sObject tooling does not show the whole data model — data model objects (DMOs, __dlm) are absent from EntityDefinition and from sf sobject list unless materialised.'
+description: 'Query and explore a Salesforce org from the CLI: run SOQL, paginate results, list and describe sObjects, call arbitrary REST endpoints, and check org limits. Use when you need to query records, inspect object schemas, explore the REST API, or check API and storage limits without an MCP server. Note that sObject tooling does not show the whole data model — Data 360 objects (DMO __dlm, DLO __dll) are absent from EntityDefinition, and many are absent from sf sobject list even while remaining queryable, so never infer existence from a listing.'
 ---
 
 # Salesforce Platform: SOQL, Describe, REST, Limits
@@ -62,29 +62,37 @@ sf api request rest "services/data/v66.0/sobjects" -o "$SF_TARGET_ORG" \
 
 #### sObject listing does not show the whole data model
 
-Two things are systematically invisible to every sObject-based method
-(`sobjects`, `EntityDefinition`, `sf sobject list`, `sf sobject describe`):
+Data 360 objects do not behave like ordinary sObjects. The table below is
+measured, not assumed — and note that `list` and `describe` disagree:
 
-- **Data model objects (DMOs).** DMOs carry the suffix `__dlm`. They are
-  **absent from `EntityDefinition` entirely** — this query returns zero rows, not
-  an error, even for DMOs that exist and hold data:
+| Object type | Suffix | `sf sobject list` | `EntityDefinition` | `sf sobject describe` | SOQL `SELECT` |
+| --- | --- | --- | --- | --- | --- |
+| DMO, materialised | `__dlm` | ✅ | ❌ | ✅ | ✅ |
+| DMO, defined only | `__dlm` | ❌ | ❌ | — | ❌ |
+| DLO | `__dll` | ❌ | ❌ | ✅ | ✅ |
+
+Two consequences worth internalising:
+
+- **A DMO or DLO absent from `sf sobject list` may still be fully queryable.**
+  `SELECT Id FROM Account_Home__dll` works and `sf sobject describe -s
+  Account_Home__dll` returns 119 fields, yet the object appears in neither
+  `sf sobject list` nor `EntityDefinition`. Do not use a listing to conclude an
+  object does not exist — try describing it.
+
+- **`EntityDefinition` never lists Data 360 objects.** This query returns zero
+  rows, not an error, even in an org with over a thousand DMOs:
 
   ```bash
   sf data query -q "SELECT QualifiedApiName FROM EntityDefinition WHERE QualifiedApiName LIKE '%__dlm'" \
     -o "$SF_TARGET_ORG" --json     # -> 0 rows, always
   ```
 
-  Only objects **materialised** in the data space appear in `sf sobject list`.
-  Definitions that exist solely in the data model do not appear and cannot be
-  queried — attempting it returns `UNSUPPORTED_QUERY` ("can't be queried …
-  has been mapped"). To enumerate the full model, use the Data 360 Connect API
-  — see [data360-connect-api](../data360-connect-api/SKILL.md).
+To enumerate definitions, use the Data 360 Connect API — see
+[data360-connect-api](../data360-connect-api/SKILL.md). To count queryable
+objects, there is no single reliable surface: check `sf sobject list` **and** the
+Data 360 listing endpoints.
 
 - **Objects in other data spaces.** A sObject listing reflects one data space.
-
-So `sf sobject list` answers "what can I query right now", **not** "what exists".
-If those two questions have different answers in your org — and with DMOs they
-usually do — do not use an sObject listing to count or enumerate the data model.
 
 ### Describe an object
 
