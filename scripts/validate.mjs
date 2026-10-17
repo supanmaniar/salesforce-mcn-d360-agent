@@ -253,6 +253,78 @@ function checkScriptModes() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* 7. Skill group tables match the catalog                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The resource-group table in the data360-connect-api skill is hand-maintained
+ * while the catalog is generated from Salesforce's Postman collections, so the
+ * two drift apart every time the catalog is regenerated. That is how the table
+ * came to disagree with the catalog in 18 of 23 rows.
+ *
+ * This check compares every "Group | count" pair in the skill against the
+ * catalog and fails on any mismatch, so drift is caught at commit time instead
+ * of being rediscovered months later.
+ */
+function checkGroupTable() {
+  const skillPath = join(ROOT, '.github', 'skills', 'data360-connect-api', 'SKILL.md');
+  if (!existsSync(skillPath)) return;
+
+  let catalog;
+  try {
+    catalog = JSON.parse(readFileSync(join(ROOT, 'catalog', 'endpoints.json'), 'utf8'));
+  } catch {
+    return;
+  }
+
+  const actual = new Map();
+  for (const e of catalog.endpoints) {
+    if (e.family !== 'data360-connect') continue;
+    actual.set(e.group, (actual.get(e.group) ?? 0) + 1);
+  }
+  if (actual.size === 0) return;
+
+  const src = readFileSync(skillPath, 'utf8');
+  const section = src.split(/^## /m).find((s) => s.startsWith('Resource Groups'));
+  if (!section) return;
+
+  const claimed = new Map();
+  for (const line of section.split('\n')) {
+    if (!line.trim().startsWith('|')) continue;
+    const cells = line.split('|').map((c) => c.trim());
+    // Two "Group | count" pairs per row: cells[1..2] and cells[4..5].
+    for (const [nameIdx, countIdx] of [[1, 2], [4, 5]]) {
+      const name = cells[nameIdx];
+      const count = cells[countIdx];
+      if (!name || !/^\d+$/.test(count ?? '')) continue;
+      if (/^-+$/.test(name) || name === 'Group') continue;
+      claimed.set(name, Number(count));
+    }
+  }
+
+  if (claimed.size === 0) return;
+
+  const problems = [];
+  for (const [group, claimedCount] of claimed) {
+    const actualCount = actual.get(group);
+    if (actualCount === undefined) {
+      problems.push(`${group}: listed in skill but not in catalog`);
+    } else if (actualCount !== claimedCount) {
+      problems.push(`${group}: skill says ${claimedCount}, catalog has ${actualCount}`);
+    }
+  }
+  for (const group of actual.keys()) {
+    if (!claimed.has(group)) problems.push(`${group}: in catalog but missing from skill table`);
+  }
+
+  if (problems.length) {
+    for (const p of problems) fail('group-table', `data360-connect-api: ${p}`);
+    return;
+  }
+  pass(`group table matches catalog (${claimed.size} groups)`);
+}
+
+/* -------------------------------------------------------------------------- */
 /* Run                                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -264,6 +336,7 @@ checkLinks();
 checkCatalog();
 checkSecrets();
 checkScriptModes();
+checkGroupTable();
 
 if (!QUIET) console.log('');
 

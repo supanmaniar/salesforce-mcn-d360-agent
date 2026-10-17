@@ -277,6 +277,26 @@ endpoint. `SELECT COUNT()` on a DMO works normally.
 - **`/ssot/data-model-objects` returns no `totalSize`.** Page until a short page
   comes back; do not assume a single call gives you everything, and do not
   assume the default page size matches other endpoints.
+- **A catalog `required=false` does not mean the API accepts the call without it.**
+  `/ssot/connections` declares `connectorType` as optional, but omitting it fails:
+
+  ```text
+  GET /ssot/connections
+  -> ILLEGAL_QUERY_PARAMETER_VALUE: ConnectorType must be provided
+  ```
+
+  `connectorType` is case-sensitive, and the value must be one the org supports —
+  an unknown connector type is rejected rather than returning an empty list:
+
+  ```text
+  GET /ssot/connections?connectorType=Gcs
+  -> ILLEGAL_QUERY_PARAMETER_VALUE: ConnectorType [Gcs] is not supported
+  ```
+
+  The catalog is generated from Salesforce's Postman collections, which do not
+  always encode endpoint-level requirements. Treat its `required` flags as a
+  starting point, and read the error when a call fails — these messages name the
+  missing parameter, so they are worth more than the metadata.
 - **`orderByExpression` uses bracket syntax**, e.g. `[Name asc]`.
 - **Some operations are asynchronous** (segment publish, data transforms,
   ML predictions). See [async-jobs-and-cache](../async-jobs-and-cache/SKILL.md).
