@@ -223,6 +223,29 @@ endpoint. `SELECT COUNT()` on a DMO works normally.
 
 ## Gotchas
 
+- **Some creates have no matching delete.** The catalog exposes collection-level
+  `POST` endpoints with no `DELETE` on the same resource, so a created object may
+  not be removable through this API. Confirmed by catalog inspection, **not**
+  executed — treat as a caution to check before relying on reversal:
+
+  | Create | Delete route |
+  | --- | --- |
+  | `POST /ssot/data-actions` | none |
+  | `POST /ssot/machine-learning/alerts` | none (`PATCH` only) |
+  | `POST /ssot/data-clean-room/collaborations` | none |
+  | `POST /ssot/data-clean-room/providers` | none |
+  | `POST /ssot/knowledge-space/library` | none (`.../library/remove-library` exists, but it is a distinct action, not a resource delete) |
+
+  Contrast with resources that *are* reversible: `/ssot/data-kits/:name`,
+  `/ssot/connections/:id`, `/ssot/knowledge-space/:name` and
+  `/ssot/data-share/:nameOrId` all have `DELETE` routes. Note `data-share` is
+  reversible even though the collection is `/ssot/data-share` while the list is
+  `/ssot/data-shares` — do not infer reversibility from naming alone.
+
+  The `destructive` flag does not cover this: a create is flagged
+  `destructive: false` because the verb destroys nothing, which says nothing about
+  whether the result can be removed. Check for a matching `DELETE` before creating
+  anything you may need to undo.
 - **Segment SQL is validated on write.** `POST`/`PATCH /ssot/segments` reject
   invalid SQL with a descriptive error — read it before retrying.
 - **Deletes are destructive.** `DELETE /ssot/segments/:segmentApiName` removes

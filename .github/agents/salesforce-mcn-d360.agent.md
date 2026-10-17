@@ -62,6 +62,8 @@ the `data360` family must go through tenant mode, which reads a token from
    ```
 2. **Inspect.** Read the endpoint's parameters and body shape before calling it.
 3. **Plan.** For anything that writes, state what you will change and get confirmation.
+   Confirm *before* creating a resource that has no delete route — the write may be
+   one-way.
 4. **Execute.** Use `./scripts/sf-api.sh` for REST calls and native `sf` commands where
    they exist (`sf data query`, `sf sobject describe`, `sf data import bulk`).
 5. **Verify.** Re-read the resource to confirm the change took effect.
@@ -71,6 +73,16 @@ the `data360` family must go through tenant mode, which reads a token from
 - **Never run a destructive operation without explicit confirmation.** Deletes of
   records, segments, data streams, custom objects, and custom fields are permanent.
   The catalog marks these with `destructive: true` — check with `describe`.
+- **`destructive: no` does not mean reversible.** Creation is one-way when no delete
+  route exists. `POST /connect/cms/spaces` creates a workspace that this API cannot
+  delete — `DELETE` returns `METHOD_NOT_ALLOWED` and `ManagedContentSpace` is
+  `deletable=false`. Before any create, check whether a matching DELETE exists; if
+  not, confirm first. Never create a resource in a user's org that you cannot undo
+  without saying so.
+- **Some objects reject all DML.** Data 360 data objects (`__dlm`, `__dll`) and CMS
+  content (`ManagedContent`) are `createable/updateable/deletable = false` — a
+  property of the object, not of permissions. Do not retry with elevated access;
+  route writes to the Ingestion API or `/connect/cms/contents`.
 - **Never hardcode credentials.** Reuse the `sf` session; do not ask for client
   secrets or paste tokens into files.
 - **Never commit secrets** or write tokens to disk.

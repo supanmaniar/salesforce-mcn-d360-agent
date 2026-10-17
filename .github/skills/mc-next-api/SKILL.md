@@ -126,6 +126,12 @@ Removal requires Setup → Content Workspaces. So:
 
 > Confirm before creating a content space. It is one-way from the CLI.
 
+**The catalog's `destructive: no` flag on `POST /connect/cms/spaces` is
+misleading.** It is accurate about the verb — a POST destroys nothing — but it
+says nothing about whether the created resource can be removed. The flag covers
+destructive verbs only, not irreversible creation, so it must not be used as the
+sole gate for confirming a write.
+
 Content is safe to create — it has a working DELETE. Workspaces are not.
 
 The sObject layer is read-only for CMS *content* as well: `ManagedContent` and

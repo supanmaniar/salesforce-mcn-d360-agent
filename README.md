@@ -207,9 +207,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a skill or refresh the cat
 
 ## Safety
 
-- **Destructive operations** (deletes of records, segments, data streams, custom objects
-  and fields) are permanent. The catalog marks them `destructive: true`, and the agent
-  confirms before running them.
+- **`destructive: true` marks permanent deletes** (records, segments, data streams,
+  custom objects and fields). The agent confirms before running them, and
+  `describe` reports the flag.
+- **`destructive: no` is not a green light.** Creation can be irreversible when no
+  delete route exists — `POST /connect/cms/spaces` creates a workspace that this
+  API cannot remove. The agent checks for a matching DELETE before creating a
+  resource and confirms when there is none.
+- **Some objects reject all DML.** Data 360 data objects (`__dlm`, `__dll`) and CMS
+  content (`ManagedContent`) are read-only by design; writes go to the family's own
+  API. `records-crud` has the detail.
 - **No credentials are stored.** The agent reuses the `sf` CLI session; tokens are read at
   runtime and never written to disk.
 - **Polling loops are always bounded.**
