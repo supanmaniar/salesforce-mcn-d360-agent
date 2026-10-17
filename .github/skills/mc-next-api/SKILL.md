@@ -128,9 +128,11 @@ Removal requires Setup → Content Workspaces. So:
 
 Content is safe to create — it has a working DELETE. Workspaces are not.
 
-The sObject layer is read-only for CMS content as well: `ManagedContent` and
+The sObject layer is read-only for CMS *content* as well: `ManagedContent` and
 `ManagedContentVariant` are both `(createable=False, updateable=False,
 deletable=False, queryable=True)`. All writes go through `/connect/cms/...`.
+This is a property of the object, not of your permissions — an admin sees the
+same flags.
 
 ## Reference
 

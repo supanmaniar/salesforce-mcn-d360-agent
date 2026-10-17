@@ -263,6 +263,14 @@ endpoint. `SELECT COUNT()` on a DMO works normally.
   DELETE /sobjects/ssot__Individual__dlm/{Id}  -> CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY
   ```
 
+  **This is a property of the object, not of your permissions.** An admin sees the
+  same flags, so do not retry with elevated access.
+
+  Do not over-generalise this into "Data 360 objects reject DML". It applies to
+  the **data** objects — DMOs (`__dlm`) and DLOs (`__dll`). Data 360 *configuration*
+  objects are ordinary sObjects and accept DML normally; `DataStream` is
+  `createable/updateable/deletable = true`.
+
   **Write capability exists at the definition layer, not the record layer.** You
   can create/update/delete DMO and DLO *definitions* and mappings via the `/ssot`
   endpoints above, but you cannot write the *records* they hold. Data enters via

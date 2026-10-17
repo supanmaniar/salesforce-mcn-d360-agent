@@ -67,6 +67,14 @@ The `data360` family therefore requires tenant mode, which reads a token from
 `sf org display` and calls the host with `curl`. Tenant mode needs
 `DATA360_TENANT_URL`; if unset, ask the user rather than guessing a hostname.
 
+**Writes never go through sObject DML for the first two families.** Data 360 data
+objects (`__dlm`, `__dll`) and CMS content (`ManagedContent`) are
+`createable=false, updateable=false, deletable=false` — every insert, update and
+delete is rejected with `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY`. This is a property
+of the object, not a permission problem. Route writes to the family's own API:
+Data 360 records via the Ingestion API, CMS content via `/connect/cms/contents`.
+Ordinary objects (`Account`, `Contact`, `DataStream`) accept DML normally.
+
 ---
 
 ## 3. Discovery Workflow
