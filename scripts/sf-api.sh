@@ -127,6 +127,16 @@ pretty() {
 }
 
 # ---------------------------------------------------------------------------
+# Warn about query parameters the endpoint does not declare. The Data 360 APIs
+# ignore unknown parameters and apply their own default, so a typo silently
+# changes the result set instead of failing. Advice only — never blocks.
+# ---------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "$QUERY" && -f "${SCRIPT_DIR}/check-query-params.mjs" ]]; then
+  node "${SCRIPT_DIR}/check-query-params.mjs" --path "$PATH_ARG" --query "$QUERY" >&2 || true
+fi
+
+# ---------------------------------------------------------------------------
 # Tenant mode — Data 360 core APIs (/api/v1, /api/v2) live on the c360a host.
 # ---------------------------------------------------------------------------
 if [[ "$TENANT" -eq 1 ]]; then

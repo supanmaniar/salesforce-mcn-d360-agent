@@ -240,7 +240,7 @@ function checkSecrets() {
 /* -------------------------------------------------------------------------- */
 
 function checkScriptModes() {
-  for (const name of ['sf-api.sh', 'sf-tenant-token.sh', 'diagnose.sh', 'catalog-search.mjs', 'validate.mjs']) {
+  for (const name of ['sf-api.sh', 'sf-tenant-token.sh', 'diagnose.sh', 'catalog-search.mjs', 'check-query-params.mjs', 'validate.mjs']) {
     const p = join(ROOT, 'scripts', name);
     if (!existsSync(p)) {
       fail('scripts', `scripts/${name} is missing`);

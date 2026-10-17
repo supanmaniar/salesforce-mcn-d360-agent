@@ -1,6 +1,6 @@
 ---
 name: platform-soql
-description: 'Query and explore a Salesforce org from the CLI: run SOQL, paginate results, list and describe sObjects, call arbitrary REST endpoints, and check org limits. Use when you need to query records, inspect object schemas, explore the REST API, or check API and storage limits without an MCP server.'
+description: 'Query and explore a Salesforce org from the CLI: run SOQL, paginate results, list and describe sObjects, call arbitrary REST endpoints, and check org limits. Use when you need to query records, inspect object schemas, explore the REST API, or check API and storage limits without an MCP server. Note that sObject tooling does not show the whole data model — data model objects (DMOs, __dlm) are absent from EntityDefinition and from sf sobject list unless materialised.'
 ---
 
 # Salesforce Platform: SOQL, Describe, REST, Limits
@@ -60,6 +60,32 @@ sf api request rest "services/data/v66.0/sobjects" -o "$SF_TARGET_ORG" \
   | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d['sobjects']))"
 ```
 
+#### sObject listing does not show the whole data model
+
+Two things are systematically invisible to every sObject-based method
+(`sobjects`, `EntityDefinition`, `sf sobject list`, `sf sobject describe`):
+
+- **Data model objects (DMOs).** DMOs carry the suffix `__dlm`. They are
+  **absent from `EntityDefinition` entirely** — this query returns zero rows, not
+  an error, even for DMOs that exist and hold data:
+
+  ```bash
+  sf data query -q "SELECT QualifiedApiName FROM EntityDefinition WHERE QualifiedApiName LIKE '%__dlm'" \
+    -o "$SF_TARGET_ORG" --json     # -> 0 rows, always
+  ```
+
+  Only objects **materialised** in the data space appear in `sf sobject list`.
+  Definitions that exist solely in the data model do not appear and cannot be
+  queried — attempting it returns `UNSUPPORTED_QUERY` ("can't be queried …
+  has been mapped"). To enumerate the full model, use the Data 360 Connect API
+  — see [data360-connect-api](../data360-connect-api/SKILL.md).
+
+- **Objects in other data spaces.** A sObject listing reflects one data space.
+
+So `sf sobject list` answers "what can I query right now", **not** "what exists".
+If those two questions have different answers in your org — and with DMOs they
+usually do — do not use an sObject listing to count or enumerate the data model.
+
 ### Describe an object
 
 ```bash
@@ -115,6 +141,31 @@ Or via REST, which returns the same data keyed by limit name:
   `INVALID_TYPE` for metadata objects.
 - **API version matters.** Pass `--api-version` to pin one; the default follows
   the org's version.
+- **An unknown query parameter is ignored, not rejected.** The Data 360 and
+  Connect APIs silently drop parameters they do not recognise and apply their own
+  default, so a typo produces a plausible but wrong result set instead of an
+  error. Sending `batchSize=200` to an endpoint whose parameter is `limit`
+  returns the default 50 rows — which reads as "there are only 50 of these".
+
+  `sf-api.sh` warns on unrecognised parameters using the catalog:
+
+  ```bash
+  ./scripts/sf-api.sh --path /ssot/data-model-objects --query 'batchSize=200'
+  # sf-api: warning: unrecognised query parameter(s) for GET /ssot/data-model-objects:
+  # sf-api:          batchSize
+  # sf-api:          declared parameters: limit, offset, orderBy
+  ```
+
+  Never trust a count that could have been truncated by a default. Confirm the
+  parameter name from the catalog first:
+
+  ```bash
+  node scripts/catalog-search.mjs describe segments.get-segments
+  ```
+
+- **Pagination parameters are inconsistent across endpoints.** Within the same
+  API family, `/ssot/segments` takes `batchSize` while `/ssot/data-model-objects`
+  takes `limit`. Do not assume a family-wide convention.
 
 ## Reference
 
