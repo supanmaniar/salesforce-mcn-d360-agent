@@ -73,6 +73,15 @@ measured, not assumed — and note that `list` and `describe` disagree:
 
 Two consequences worth internalising:
 
+- **DMOs and DLOs reject every DML verb.** They are queryable, not writable:
+  `INSERT`, `UPDATE` and `DELETE` all return
+  `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY`, and `describe` reports
+  `createable/updateable/deletable = false` on all of them. This is a property of
+  the object, not a permission — an admin sees the same flags, so do not retry
+  with elevated access. Route writes to the family's own API; see
+  [records-crud](../records-crud/SKILL.md) and
+  [data360-connect-api](../data360-connect-api/SKILL.md).
+
 - **A DMO or DLO absent from `sf sobject list` may still be fully queryable.**
   `SELECT Id FROM Account_Home__dll` works and `sf sobject describe -s
   Account_Home__dll` returns 119 fields, yet the object appears in neither

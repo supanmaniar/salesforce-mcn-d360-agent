@@ -1,0 +1,100 @@
+{
+  "_comment": "Recorded sObject describe results, used by validate.mjs to check that skills describe object writability correctly. Captured from a live org (API v66.0) so that CI does not need an org connection. Regenerate with: node scripts/record-describe.mjs",
+  "recordedAt": "2026-10-17",
+  "apiVersion": "66.0",
+  "org": "demo.mcdcnext@supanmaniar.com",
+  "objects": {
+    "ssot__Individual__dlm": {
+      "createable": false,
+      "updateable": false,
+      "deletable": false,
+      "queryable": true,
+      "family": "data360-data"
+    },
+    "ssot__Account__dlm": {
+      "createable": false,
+      "updateable": false,
+      "deletable": false,
+      "queryable": true,
+      "family": "data360-data"
+    },
+    "Account_Home__dll": {
+      "createable": false,
+      "updateable": false,
+      "deletable": false,
+      "queryable": true,
+      "family": "data360-data"
+    },
+    "ManagedContent": {
+      "createable": false,
+      "updateable": false,
+      "deletable": false,
+      "queryable": true,
+      "family": "cms-content"
+    },
+    "ManagedContentVariant": {
+      "createable": false,
+      "updateable": false,
+      "deletable": false,
+      "queryable": true,
+      "family": "cms-content"
+    },
+    "ManagedContentSpace": {
+      "createable": false,
+      "updateable": false,
+      "deletable": false,
+      "queryable": true,
+      "family": "cms-content"
+    },
+    "DataStream": {
+      "createable": true,
+      "updateable": true,
+      "deletable": true,
+      "queryable": true,
+      "family": "data360-config"
+    },
+    "Account": {
+      "createable": true,
+      "updateable": true,
+      "deletable": true,
+      "queryable": true,
+      "family": "standard"
+    },
+    "Contact": {
+      "createable": true,
+      "updateable": true,
+      "deletable": true,
+      "queryable": true,
+      "family": "standard"
+    },
+    "Lead": {
+      "createable": true,
+      "updateable": true,
+      "deletable": true,
+      "queryable": true,
+      "family": "standard"
+    },
+    "Campaign": {
+      "createable": true,
+      "updateable": true,
+      "deletable": true,
+      "queryable": true,
+      "family": "standard"
+    }
+  },
+  "irreversibleCreates": {
+    "_comment": "Collection-level POST endpoints with no DELETE route on the same resource. Catalog-derived, not executed.",
+    "POST /connect/cms/spaces": "Content / Workspace / Create a workspace",
+    "POST /ssot/data-actions": "Data Actions Create data action",
+    "POST /ssot/machine-learning/alerts": "Machine Learning Create data alert",
+    "POST /ssot/data-clean-room/collaborations": "Clean Rooms Create a collaboration",
+    "POST /ssot/data-clean-room/providers": "Clean Rooms Create a provider",
+    "POST /ssot/knowledge-space/library": "Notebook AI Create knowledge library"
+  },
+  "reversibleCreates": [
+    "DELETE /ssot/data-kits/:dataKitDevName",
+    "DELETE /ssot/connections/:connectionId",
+    "DELETE /ssot/knowledge-space/:knowledgeSpaceApiNameOrId",
+    "DELETE /ssot/data-share/:nameOrId"
+  ]
+}

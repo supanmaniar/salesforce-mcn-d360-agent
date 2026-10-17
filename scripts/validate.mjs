@@ -240,7 +240,7 @@ function checkSecrets() {
 /* -------------------------------------------------------------------------- */
 
 function checkScriptModes() {
-  for (const name of ['sf-api.sh', 'sf-tenant-token.sh', 'diagnose.sh', 'catalog-search.mjs', 'check-query-params.mjs', 'validate.mjs']) {
+  for (const name of ['sf-api.sh', 'sf-tenant-token.sh', 'diagnose.sh', 'catalog-search.mjs', 'check-query-params.mjs', 'record-describe.mjs', 'validate.mjs']) {
     const p = join(ROOT, 'scripts', name);
     if (!existsSync(p)) {
       fail('scripts', `scripts/${name} is missing`);
@@ -325,6 +325,107 @@ function checkGroupTable() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* 8. Writability claims match the recorded describe results                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Several skills make claims about whether objects accept DML. Those claims were
+ * wrong more than once, each time in the direction of over-generalising from a
+ * single object. This checks each claim against recorded describe output, so a
+ * claim that contradicts the platform fails CI.
+ *
+ * Checks are deliberately narrow: they key off a specific object name appearing
+ * near a specific claim, so prose can change freely without false positives.
+ */
+function checkWritabilityClaims() {
+  let fixtures;
+  try {
+    fixtures = JSON.parse(readFileSync(join(ROOT, 'catalog', 'describe-fixtures.json'), 'utf8'));
+  } catch {
+    fail('writability', 'catalog/describe-fixtures.json is missing or unreadable');
+    return;
+  }
+
+  const obj = fixtures.objects ?? {};
+  const skillsDir = join(ROOT, '.github', 'skills');
+  if (!existsSync(skillsDir)) return;
+
+  const skillFiles = [];
+  for (const entry of readdirSync(skillsDir)) {
+    const p = join(skillsDir, entry, 'SKILL.md');
+    if (existsSync(p)) skillFiles.push(p);
+  }
+
+  const problems = [];
+  const checked = [];
+
+  const isReadOnly = (o) => obj[o] && !obj[o].createable && !obj[o].updateable && !obj[o].deletable;
+  const isWritable = (o) => obj[o] && obj[o].createable && obj[o].updateable && obj[o].deletable;
+
+  // Build the name alternation from the fixture rather than from suffix patterns.
+  // Keying off `__dlm`/`__dll`/`ManagedContent` missed a claim about DataStream,
+  // which is exactly the kind of over-generalisation this check exists to catch.
+  const names = Object.keys(obj).sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (names.length === 0) return;
+
+  // (a) An object named as read-only must actually be read-only in the fixture.
+  const READONLY_CLAIM = new RegExp(
+    `(\`?(?:${names.join('|')})\`?)[^.\\n]{0,90}?(?:is |are )?(?:read-only|rejects? (?:all )?DML|reject (?:all )?DML|createable=false|c=u=d=False)`,
+    'gi'
+  );
+
+  // (b) An object named as writable must actually be writable.
+  const WRITABLE_CLAIM = new RegExp(
+    `(?:${names.join('|')})[^.\\n]{0,120}?createable\\/updateable\\/deletable\\s*=\\s*true`,
+    'gi'
+  );
+  const WRITABLE_EXPLICIT = new RegExp(
+    `(\`?(?:${names.join('|')})\`?)\\s*(?:is|are)\\s*(?:createable\\/updateable\\/deletable\\s*=\\s*true|c=u=d=True)`,
+    'gi'
+  );
+
+  for (const file of skillFiles) {
+    const src = readFileSync(file, 'utf8');
+    const rel = relative(ROOT, file);
+
+    for (const m of src.matchAll(READONLY_CLAIM)) {
+      const name = m[1].replace(/`/g, '');
+      if (!obj[name]) continue;               // not in the fixture; nothing to verify
+      checked.push(`${rel}: ${name} claimed read-only`);
+      if (!isReadOnly(name)) {
+        problems.push(
+          `${rel}: claims ${name} is read-only, but describe reports ` +
+            `createable=${obj[name].createable} updateable=${obj[name].updateable} deletable=${obj[name].deletable}`
+        );
+      }
+    }
+
+    // The writable claim names several objects in a list; check each one found.
+    for (const re of [WRITABLE_CLAIM, WRITABLE_EXPLICIT]) {
+      for (const m of src.matchAll(re)) {
+        const chunk = m[0];
+        for (const nm of Object.keys(obj)) {
+          if (!chunk.includes(nm)) continue;
+          checked.push(`${rel}: ${nm} claimed writable`);
+          if (!isWritable(nm)) {
+            problems.push(
+              `${rel}: claims ${nm} is writable, but describe reports ` +
+                `createable=${obj[nm].createable} updateable=${obj[nm].updateable} deletable=${obj[nm].deletable}`
+            );
+          }
+        }
+      }
+    }
+  }
+
+  if (problems.length) {
+    for (const p of problems) fail('writability', p);
+    return;
+  }
+  pass(`writability claims consistent with fixtures (${checked.length} claim(s))`);
+}
+
+/* -------------------------------------------------------------------------- */
 /* Run                                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -337,6 +438,7 @@ checkCatalog();
 checkSecrets();
 checkScriptModes();
 checkGroupTable();
+checkWritabilityClaims();
 
 if (!QUIET) console.log('');
 

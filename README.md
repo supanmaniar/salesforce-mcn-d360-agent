@@ -84,6 +84,7 @@ The `mc-next` and `data360-connect` families do not need this.
 | [catalog/ENDPOINT-INDEX.md](catalog/ENDPOINT-INDEX.md) | Condensed markdown index |
 | [scripts/catalog-search.mjs](scripts/catalog-search.mjs) | Discover and describe endpoints |
 | [scripts/check-query-params.mjs](scripts/check-query-params.mjs) | Warn when a query parameter is not declared (silent-default guard) |
+| [scripts/record-describe.mjs](scripts/record-describe.mjs) | Refresh the describe fixtures used to check writability claims |
 | [scripts/sf-api.sh](scripts/sf-api.sh) | Authenticated REST calls via the CLI |
 | [scripts/sf-tenant-token.sh](scripts/sf-tenant-token.sh) | Mint a Connected App token for the Data 360 family |
 | [scripts/diagnose.sh](scripts/diagnose.sh) | Work out why a Data 360 call is failing |
