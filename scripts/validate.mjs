@@ -496,11 +496,39 @@ function checkPagingLoops() {
     });
   }
 
+  // Prose can teach the same truncating rule without a code block. The original
+  // instance of this bug was a prose line, not a loop, so the code scan above
+  // would have missed it — catch the claim as well as the code.
+  const NEXT_PAGE_KEYWORDS = ['nextPageUrl', 'nextPageURL', 'next page url'];
+  // Wording that teaches truncation (bad) versus wording that warns about it (good).
+  const TEACHES_TRUNCATION = /(?:page\s+until|stop\s+(?:on|when)|until)[^.]{0,60}short page/i;
+  const WARNS_ABOUT_IT = /(?:not|n't|never)\s+mean|truncat|silently|mislead/i;
+
+  for (const entry of readdirSync(skillsDir)) {
+    const file = join(skillsDir, entry, 'SKILL.md');
+    if (!existsSync(file)) continue;
+    const rel = relative(ROOT, file);
+    const text = readFileSync(file, 'utf8');
+    text.split('\n').forEach((line, i) => {
+      const endpoint = NEXT_PAGE_ONLY.find(({ path }) => line.includes(path));
+      if (!endpoint) return;
+      const nearby = text.split('\n').slice(Math.max(0, i - 1), i + 3).join(' ');
+      if (NEXT_PAGE_KEYWORDS.some((k) => nearby.includes(k))) return;
+      if (!TEACHES_TRUNCATION.test(nearby)) return;
+      // A sentence that warns about the trap is the fix, not the bug.
+      if (WARNS_ABOUT_IT.test(nearby)) return;
+      problems.push(
+        `${rel}:${i + 1}: teaches "stop on a short page" for ${endpoint.path} without mentioning ` +
+          `the pagination link. That endpoint returns short pages mid-sequence, so the rule truncates silently.`
+      );
+    });
+  }
+
   if (problems.length) {
     for (const p of problems) fail('paging', p);
     return;
   }
-  pass(`no truncating paging loops in examples (${inspected} loop(s) inspected)`);
+  pass(`no truncating paging guidance found (${inspected} loop(s) inspected)`);
 }
 
 /* -------------------------------------------------------------------------- */
