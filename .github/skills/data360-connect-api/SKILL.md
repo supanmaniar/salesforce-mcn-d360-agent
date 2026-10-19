@@ -393,9 +393,68 @@ If you must report a count, report what you collected and whether the traversal
 completed. A partial result stated honestly is useful; a partial result presented
 as complete is worse than no answer.
 
-- **Segment criteria can be absent.** Some segments (nested, some UI-created,
-  vector-search) return an empty `includeCriteria` even in their details. Record
-  it as unavailable; do not infer the segment matches everything.
+### Data shapes that surprise
+
+Verified on a live org. Each of these has caused a wrong result in practice.
+
+- **`includeCriteria` is JSON encoded with HTML entities.** It arrives as a string
+  containing `&quot;`, not as an object. Unescape before parsing:
+
+  ```python
+  json.loads(html.unescape(segment['includeCriteria']))
+  ```
+
+  The list response already carries it — a details call adds nothing essential.
+  Some segments (dynamic, nested, vector-search) return it **empty**; record that
+  as unavailable rather than inferring the segment matches everything.
+
+- **`collection` on `/ssot/calculated-insights` is an object, not an array.** It
+  is `{count, items, nextPageToken, ...}`, so `len(response['collection'])` is a
+  key count, not an item count. Read `collection.items`. Pagination uses
+  `pageToken`, and `offset` is still required.
+
+- **`/ssot/metadata?entityType=DataModelObject` carries `relationships` inline.**
+  They are the **active** ones only, and every relationship appears **twice** —
+  once from each end. Measured: 304 entries across 68 DMOs resolving to 152
+  unique. De-duplicate on `from|field|to|field` before counting, or you will
+  report double.
+
+- **Field type naming differs by source.** A DMO field is
+  `{type: 'STRING', businessType: 'TEXT'}`; the same field through a stream is
+  `{datatype: 'Text'}`. Do not compare them as strings.
+
+- **Stream field names omit the `__c` suffix that DLO fields carry.** Stream
+  mappings say `PersonOtherPhone`; the DLO says `PersonOtherPhone__c`. Match on
+  the exact name first, then retry with `__c` appended.
+
+- **A stream's `mappings` array is empty in both list and details.** Field
+  correspondence is in `sourceFields`, which has only `{name, datatype}` — it
+  names **no target DMO**. DLO → DMO mapping is a separate call
+  (`/ssot/data-model-object-mappings?dmoDeveloperName=...`).
+
+- **`recencyCriteria` can hold two conditions at once** — a time window *and* a
+  record count, on the same field:
+
+  ```json
+  [{"fieldName":"ssot__StartTimestamp__c","value":"30","valueType":"time","valueUnit":"DAY"},
+   {"fieldName":"ssot__StartTimestamp__c","value":"100","valueType":"record","valueUnit":"record"}]
+  ```
+
+  Reading only the first condition silently drops the cap.
+
+- **DLOs exist with no data stream behind them.** Search index chunks
+  (`*_chunk__dll`), index roots (`*_index__dll`) and `StaticCurrencyRates_Home__dll`
+  are not in any stream's `dataLakeObjectInfo`. Do not assume a DLO implies a
+  stream.
+
+- **Data graphs create system DMOs that survive category filtering.** A graph
+  adds DMOs named `Dg_<4>_<15>_FRAGMENT__dlm`, `_STATE__dlm`, `<name>_<13-digit-ms>_ID__dlm`,
+  `_VALUE__dlm` and `DataGraphStateTable__dlm`. These arrive under ordinary
+  categories (`Profile`, `Related`) rather than the excluded ones
+  (`Segment_Membership`, `Activation_Audience`, `Vector_Embedding`), so a
+  category filter does not catch them. Filter by name pattern as well, or your
+  DMO count will include graph plumbing.
+
 - **`/ssot/data-model-object-mappings` needs `dmoDeveloperName`.** There is no
   call for all mappings, and a `404 NOT_FOUND` means *that DMO has no mappings*,
   not that the request was wrong.

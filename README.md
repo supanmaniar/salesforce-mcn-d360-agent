@@ -226,6 +226,8 @@ unlike the documentation suggests, and each is documented where you would hit it
 | Short pages do not mean the end | `/ssot/data-lake-objects` returns 18, 17, 20, 15 across pages — an offset loop that stops on a short page returns **18 of 80** and reports success | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
 | A listing `totalSize` can overcount | Reported 80; walking `nextPageUrl` yielded 70 unique items | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
 | `/ssot/data-streams` offsets from 1 | `offset=0` and `offset=1` return the same page, so an offset loop skips the last page | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
+| Data graphs inject hidden DMOs | A graph adds `Dg_*_FRAGMENT__dlm`, `*_<13-digit-ms>_ID__dlm` and `DataGraphStateTable__dlm`, filed under ordinary categories (`Profile`, `Related`) so a category filter misses them | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
+| JSON arrives HTML-escaped | `includeCriteria` and `contactPointPath` contain literal `&quot;`; parsing without unescaping fails | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
 | `EntityDefinition` never lists Data 360 objects | Returns **zero rows**, not an error, in an org with 1,067 DMOs | [platform-soql](.github/skills/platform-soql/SKILL.md) |
 | Defined is not materialised | **1,067** DMOs existed; only **45** were queryable | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
 | Data objects reject all DML | `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` — a property of the object, not your permissions | [records-crud](.github/skills/records-crud/SKILL.md) |
@@ -243,6 +245,27 @@ to tell "wrong token type" from "expired token".
 describes the verb, not the outcome — a POST destroys nothing, so it reads `no` even
 when what it creates cannot be removed. The agent checks for a matching DELETE before
 creating a resource.
+
+### Verification provenance
+
+The findings above were cross-checked against
+[`config-snapshot-data360`](https://github.com/szymonlewandowski/config-snapshot-data360),
+an independent Chrome extension that snapshots Data 360 configuration. Its
+`docs/api-quirks.md` documents the same API family from a separate implementation.
+
+Every claim was then independently tested against our org:
+
+| Verdict | Count | Meaning |
+| --- | ---: | --- |
+| Reproduced | 28 | matched exactly, including generated-DMO name patterns |
+| Untestable | 12 | our org lacks the feature (0 calculated insights, 0 activations) |
+| Partial | 2 | true in part; detail differs |
+| Refuted | 2 | contradicted here — org-dependent |
+
+Two investigations reaching the same quirks independently is stronger evidence
+than either alone. It also corrected four things in this repo: a **paging loop
+that silently truncated**, a `totalSize` that overcounts, `offset` counting from
+1 on data streams, and an incomplete set of data-shape traps.
 
 ---
 
