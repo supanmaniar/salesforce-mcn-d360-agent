@@ -1,6 +1,6 @@
 ---
 name: data360-connect-api
-description: 'Call Salesforce Data 360 Connect APIs (data streams, segments, activations, identity resolutions, connections, data spaces, data kits, calculated insights, machine learning, clean rooms, data governance, data model objects, data lake objects) from the Salesforce CLI without an MCP server. Use when managing Data 360 data streams, building or activating segments, configuring identity resolution, enumerating data model objects (DMOs) or data lake objects (DLOs), or working with any /ssot endpoint. Includes the paging semantics per endpoint, because several /ssot endpoints truncate silently under naive offset loops.'
+description: 'Call Salesforce Data 360 Connect APIs (data streams, segments, activations, identity resolutions, connections, data spaces, data kits, calculated insights, machine learning, clean rooms, data governance, data model objects, data lake objects) from the Salesforce CLI without an MCP server. Use when managing Data 360 data streams, building or activating segments, listing the members of a segment or finding out who is in one, configuring identity resolution, enumerating data model objects (DMOs) or data lake objects (DLOs), or working with any /ssot endpoint. Includes the paging semantics per endpoint, because several /ssot endpoints truncate silently under naive offset loops.'
 ---
 
 # Data 360 Connect API
@@ -146,6 +146,7 @@ read-only behaviour of DMOs and DLOs. Writes go through the Ingestion API.
 | Get segment | GET | `/ssot/segments/:segmentApiNameOrId` |
 | Update segment | PATCH | `/ssot/segments/:segmentApiName` |
 | Delete segment | DELETE | `/ssot/segments/:segmentApiName` |
+| **List segment members** | GET | `/ssot/segments/:segmentApiName/members` |
 | List data streams | GET | `/ssot/data-streams` |
 | List data spaces | GET | `/ssot/data-spaces` |
 | List identity resolutions | GET | `/ssot/identity-resolutions` |
@@ -155,6 +156,134 @@ read-only behaviour of DMOs and DLOs. Writes go through the Ingestion API.
 | Get one data model object | GET | `/ssot/data-model-objects/:dataModelObjectName` |
 | List object mappings | GET | `/ssot/data-model-object-mappings` |
 | List data lake objects | GET | `/ssot/data-lake-objects` |
+
+### Who is in a segment
+
+The members endpoint exists, but on its own it returns nothing you can read. Two
+calls plus one join turn it into names.
+
+```bash
+# 1. Members. Returns opaque 32-hex ids only — no name, no email.
+./scripts/sf-api.sh --path "/ssot/segments/NA_Webinar_Leads/members" \
+  --query 'limit=200&offset=0'
+
+# 2. The segment record tells you where those ids live.
+./scripts/sf-api.sh --path "/ssot/segments/NA_Webinar_Leads"
+```
+
+Step 2 returns the fields that make step 1 usable:
+
+| Field | Example | Use |
+| --- | --- | --- |
+| `segmentMembershipDmo` | `{latestTable: ssotIndividualSm01_Unified_SM_17809446__dlm, ...}` | the table holding membership rows — **verify it, see below** |
+| `segmentOnApiName` | `UnifiedssotIndividualSm01__dlm` | the Individual DMO to join to |
+| `publishStatus` | `SUCCESS` | whether membership was ever materialised |
+| `lastSegmentMemberCount` | `61` | advisory only — do not trust it, see below |
+| `marketSegmentId` | `1sgHp0000008PUzIAM` | the segment's own id — **truncate to 15 characters** to match the table |
+
+```bash
+# 3. Membership rows. Queryable by SOQL like any DMO.
+sf data query --query "SELECT Id__c, Delta_Type__c, Timestamp__c \
+  FROM ssotIndividualSm01_Unified_SM_17809446__dlm LIMIT 10" \
+  -o "$SF_TARGET_ORG" --json
+
+# 4. Join to names. Id__c here is the same 32-hex value the members call returned.
+sf data query --query "SELECT ssot__Id__c, ssot__PersonName__c, ssot__ExternalRecordId__c \
+  FROM UnifiedssotIndividualSm01__dlm \
+  WHERE ssot__Id__c IN ('0a016684405f3e2dcdf5892f068a836b')" \
+  -o "$SF_TARGET_ORG" --json
+```
+
+**The join key is renamed, and nothing tells you that.**
+`segmentMembershipDmo.Id__c` equals `segmentOnApiName.ssot__Id__c`. The prefix
+follows the Individual DMO, not the members response, so match on the value.
+
+Verified end to end: 61 members listed, 61 rows in the membership DMO,
+`lastSegmentMemberCount` 61, and ids resolved to actual people
+(`17093d862c8aa22b… → Frank Caster`, `0e82239f6b7b0d11… → Barry Brown`).
+
+#### `lastSegmentMemberCount` and `segmentMembershipDmo` both mislead
+
+Do not open with either of them. Verified on a two-segment org:
+
+| Segment | `publishStatus` | `lastSegmentMemberCount` | Members endpoint | Rows in the table it points at |
+| --- | --- | --- | --- | --- |
+| `NA_Webinar_Leads` | `SUCCESS` | 61 | 61 | 61 |
+| `Test` | (absent) | **502** | **0** | 0 |
+
+`Test` had never been published, so it has no materialised membership — and yet it
+still reported a count of 502. Worse, its `segmentMembershipDmo` pointed at the
+**same table as the other segment**, because that field describes the shared
+per-Individual membership DMO rather than a table private to the segment.
+
+So confirm membership by reading the members endpoint's `totalCount`, or by
+filtering the DMO on the segment's own id:
+
+```bash
+# The table can hold rows for more than one segment. Always scope by segment id.
+sf data query --query "SELECT Id__c FROM ssotIndividualSm01_Unified_SM_17809446__dlm \
+  WHERE Segment_Id__c = '1sgHp0000008PUz'" -o "$SF_TARGET_ORG" --json
+```
+
+**Use the 15-character id, not `marketSegmentId` as returned.** The segment record
+gives `1sgHp0000008PUzIAM` (18 characters) but the table stores the 15-character
+form `1sgHp0000008PUz`. Verified: the short form returns 61 rows, the full
+`marketSegmentId` returns **0 with no error** — a silently empty result, not a
+failed query.
+
+`GROUP BY Segment_Id__c` on that table returned exactly one group of 61 rows,
+matching `NA_Webinar_Leads` and excluding `Test` — which is how the 502 discrepancy
+was found. Treat `lastSegmentMemberCount` as a claim about the last publish
+attempt, not about what you can read now.
+
+#### Two ways to get the members, and when to use each
+
+| | Members endpoint | Membership DMO |
+| --- | --- | --- |
+| Path | `GET /ssot/segments/:apiName/members` | `SELECT … FROM <segmentMembershipDmo>` |
+| Needs the segment record first | no | yes |
+| Filter members with SOQL | no | yes |
+| Scope to one segment | inherent | **must filter on `Segment_Id__c`** |
+| Column names in the response | camelCase (`deltaType`, `id`) | DMO names (`Delta_Type__c`, `Id__c`) |
+| Historical rows | not available | `historyTable` — but it measured **0 rows** here |
+
+Use the membership DMO when you need to filter, join, or count. Use the members
+endpoint when you just want the current list and the segment's api name is all
+you have.
+
+The membership DMO has 11 columns; the ones that matter are `Id__c`,
+`Delta_Type__c`, `Snapshot_Type__c`, `Segment_Id__c`, `Parent_Segment_Id__c`,
+`Timestamp__c`, `Version_Stamp__c`, and `KQ_Id__c`.
+
+#### Traps specific to these two calls
+
+- **The members response does not use the usual envelope.** It returns
+  `data[]` with `totalCount` and `rowCount`. There is no `records`, no
+  `totalSize`, and no `nextPageUrl` — so a paging loop written for other D360
+  endpoints will find nothing to page and stop after one page.
+- **Paging is `limit` and `offset`, not `batchSize`.** Declared parameters are
+  `fields, filters, limit, offset, orderBy`. An unrecognised name is ignored and
+  the API silently applies its own default; `check-query-params.mjs` warns about
+  this.
+- **`fields` takes the DMO column names, not the response keys.** `fields=id`
+  fails with `INVALID_API_INPUT`; the error lists the acceptable values as
+  `Delta_Type__c, Timestamp__c, Segment_Id__c, Parent_Segment_Id__c,
+  Version_Stamp__c, KQ_Id__c, Snapshot_Type__c, Id__c`. Use those, and read the
+  camelCase names out of the response.
+- **`filters` works and is worth using.** `filters=Delta_Type__c in ('new')`
+  filters server-side, which avoids pulling a whole segment to discard most of
+  it.
+- **`ssot__ExternalRecordId__c` is a Contact *or* Lead id.** Both `003…` and
+  `00Q…` appear in the same result set, so do not assume Contact.
+- **`Delta_Type__c` and `Snapshot_Type__c` describe the row, not the person.**
+  `new`/`F` were the only values present in a freshly published segment; treat
+  them as membership-change metadata rather than a status field.
+- **Ids are hashed, not Salesforce ids.** They are 32 hex characters, and the
+  Individual row's `Id` (`qHA…`, `qGt…`) is a *different* internal id again —
+  join on `ssot__Id__c`, not on `Id`.
+- **`SELECT COUNT()` works on the membership DMO** here (returned 61), even
+  though it is unsupported on data lake objects. Do not generalise the DLO
+  restriction to DMOs.
 
 ### Enumerating data model objects
 
