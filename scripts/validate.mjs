@@ -426,6 +426,84 @@ function checkWritabilityClaims() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* 9. No truncating paging loops in skill code examples                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `/ssot/data-lake-objects` returns short pages mid-sequence, so a loop that
+ * stops when a page is shorter than the requested size silently truncates. That
+ * pattern was documented in this repo and returned 18 of 80 objects while
+ * reporting success.
+ *
+ * This catches the shape: a shell loop that pages one of the endpoints which
+ * must be walked by `nextPageUrl`, without referencing `nextPageUrl`.
+ */
+const NEXT_PAGE_ONLY = [
+  { path: '/ssot/data-lake-objects', key: 'dataLakeObjects' },
+  { path: '/ssot/data-streams', key: 'dataStreams' },
+];
+
+function checkPagingLoops() {
+  const skillsDir = join(ROOT, '.github', 'skills');
+  if (!existsSync(skillsDir)) return;
+
+  const problems = [];
+  let inspected = 0;
+
+  for (const entry of readdirSync(skillsDir)) {
+    const file = join(skillsDir, entry, 'SKILL.md');
+    if (!existsSync(file)) continue;
+    const rel = relative(ROOT, file);
+    const lines = readFileSync(file, 'utf8').split('\n');
+
+    // Look for fenced bash blocks that contain a while loop over a path.
+    let inFence = false;
+    let buffer = [];
+    let startLine = 0;
+
+    const flush = (endLine) => {
+      if (buffer.length === 0) return;
+      const body = buffer.join('\n');
+      const isLoop = /while\s/.test(body) || /until\s/.test(body);
+      if (!isLoop) return;
+      inspected++;
+      for (const { path } of NEXT_PAGE_ONLY) {
+        if (!body.includes(path)) continue;
+        // A loop over this endpoint must use nextPageUrl, or explain why not.
+        if (body.includes('nextPageUrl')) continue;
+        if (/offset/i.test(body) && !/nextPageUrl/.test(body)) {
+          problems.push(
+            `${rel}:${startLine}-${endLine}: loops over ${path} using offset without nextPageUrl. ` +
+              `That endpoint returns short pages mid-sequence, so the loop truncates silently. ` +
+              `Walk nextPageUrl instead.`
+          );
+        }
+      }
+    };
+
+    lines.forEach((line, i) => {
+      if (/^\s*```/.test(line)) {
+        if (inFence) {
+          flush(i);
+          buffer = [];
+        } else {
+          startLine = i + 2;
+        }
+        inFence = !inFence;
+        return;
+      }
+      if (inFence) buffer.push(line);
+    });
+  }
+
+  if (problems.length) {
+    for (const p of problems) fail('paging', p);
+    return;
+  }
+  pass(`no truncating paging loops in examples (${inspected} loop(s) inspected)`);
+}
+
+/* -------------------------------------------------------------------------- */
 /* Run                                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -439,6 +517,7 @@ checkSecrets();
 checkScriptModes();
 checkGroupTable();
 checkWritabilityClaims();
+checkPagingLoops();
 
 if (!QUIET) console.log('');
 

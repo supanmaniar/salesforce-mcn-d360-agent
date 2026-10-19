@@ -223,6 +223,9 @@ unlike the documentation suggests, and each is documented where you would hit it
 | --- | --- | --- |
 | The tenant host rejects session tokens | Opaque token -> **HTTP 400 with an empty body**, not 401 | [CONNECTED-APP-SETUP.md](docs/CONNECTED-APP-SETUP.md) |
 | Unrecognised query params are ignored | The API applies its own default, so a typo returns a plausible-but-wrong result | `check-query-params.mjs` warns before the request |
+| Short pages do not mean the end | `/ssot/data-lake-objects` returns 18, 17, 20, 15 across pages — an offset loop that stops on a short page returns **18 of 80** and reports success | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
+| A listing `totalSize` can overcount | Reported 80; walking `nextPageUrl` yielded 70 unique items | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
+| `/ssot/data-streams` offsets from 1 | `offset=0` and `offset=1` return the same page, so an offset loop skips the last page | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
 | `EntityDefinition` never lists Data 360 objects | Returns **zero rows**, not an error, in an org with 1,067 DMOs | [platform-soql](.github/skills/platform-soql/SKILL.md) |
 | Defined is not materialised | **1,067** DMOs existed; only **45** were queryable | [data360-connect-api](.github/skills/data360-connect-api/SKILL.md) |
 | Data objects reject all DML | `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` — a property of the object, not your permissions | [records-crud](.github/skills/records-crud/SKILL.md) |
