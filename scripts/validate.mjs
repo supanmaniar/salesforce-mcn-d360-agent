@@ -15,6 +15,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative, resolve, normalize } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '..');
@@ -240,7 +241,7 @@ function checkSecrets() {
 /* -------------------------------------------------------------------------- */
 
 function checkScriptModes() {
-  for (const name of ['sf-api.sh', 'sf-tenant-token.sh', 'diagnose.sh', 'catalog-search.mjs', 'check-query-params.mjs', 'record-describe.mjs', 'validate.mjs']) {
+  for (const name of ['sf-api.sh', 'sf-tenant-token.sh', 'diagnose.sh', 'd360-snapshot.mjs', 'd360-diff.mjs', 'catalog-search.mjs', 'check-query-params.mjs', 'record-describe.mjs', 'validate.mjs']) {
     const p = join(ROOT, 'scripts', name);
     if (!existsSync(p)) {
       fail('scripts', `scripts/${name} is missing`);
@@ -532,6 +533,51 @@ function checkPagingLoops() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* 10. Unit tests for the scripts that cannot be checked by inspection        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Two claims in this repo, if silently wrong, cause harm outside the repo:
+ *
+ *   - redaction (lib/redact.mjs) — a user shares a snapshot they believe is
+ *     clean and leaks segment criteria.
+ *   - the diff CI gate (d360-diff.mjs) — a comparison with no drift but an
+ *     unsound basis exits 0, so a real problem passes CI.
+ *
+ * Both are therefore extracted so they can be executed here, in CI, with no org.
+ * Each suite was negative-tested against the implementation it replaced and
+ * fails on it, so they are not vacuous.
+ */
+function checkUnitTests() {
+  const dir = join(ROOT, 'scripts', 'test');
+  if (!existsSync(dir)) {
+    fail('tests', 'scripts/test/ is missing');
+    return;
+  }
+
+  const suites = readdirSync(dir).filter((f) => f.endsWith('.test.mjs')).sort();
+  if (!suites.length) {
+    fail('tests', 'no *.test.mjs suites found');
+    return;
+  }
+
+  for (const suite of suites) {
+    const res = spawnSync(process.execPath, [join(dir, suite)], { cwd: ROOT, encoding: 'utf8' });
+    if (res.status !== 0) {
+      const detail = (res.stdout || '')
+        .split('\n')
+        .filter((l) => l.includes('FAIL') || l.includes('expected') || l.includes('actual'))
+        .slice(0, 8);
+      for (const d of detail) fail('tests', d.trim());
+      if (!detail.length) fail('tests', `${suite} exited ${res.status}`);
+      continue;
+    }
+    const summary = (res.stdout || '').trim().split('\n').pop();
+    pass(`${suite} ${summary}`);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Run                                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -546,6 +592,7 @@ checkScriptModes();
 checkGroupTable();
 checkWritabilityClaims();
 checkPagingLoops();
+checkUnitTests();
 
 if (!QUIET) console.log('');
 

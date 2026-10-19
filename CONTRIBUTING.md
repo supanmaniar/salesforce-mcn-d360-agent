@@ -45,12 +45,13 @@ node scripts/catalog-search.mjs index > catalog/ENDPOINT-INDEX.md
 CI runs two gates on every push:
 
 ```bash
-node scripts/validate.mjs   # skills, links, catalog, secrets, group table, writability
+node scripts/validate.mjs   # skills, links, catalog, secrets, drift guards, unit tests
 shellcheck scripts/*.sh     # shell
 ```
 
 `validate.mjs` needs **no org connection** — checks that would normally require a
-live org compare against recorded fixtures in `catalog/describe-fixtures.json`.
+live org compare against recorded fixtures in `catalog/describe-fixtures.json`,
+and the unit tests under `scripts/test/` build their inputs in memory.
 
 Run the same gates locally before pushing. To verify against a real org:
 
@@ -62,6 +63,31 @@ node scripts/catalog-search.mjs stats
 node scripts/catalog-search.mjs list --family mc-next --limit 3
 ./scripts/sf-api.sh --path /limits
 ```
+
+### Unit tests
+
+Two behaviours are extracted so they can be tested without an org, because both
+fail in a way that misleads the person relying on them:
+
+| Suite | Guards |
+| --- | --- |
+| [scripts/test/redact.test.mjs](scripts/test/redact.test.mjs) | `--redact` really hides literals, and reaches criteria outside the modules it was written for |
+| [scripts/test/diff.test.mjs](scripts/test/diff.test.mjs) | `--fail-on-change` exits 1 on an unsound comparison, not just on drift |
+
+```bash
+node scripts/test/redact.test.mjs
+node scripts/test/diff.test.mjs
+```
+
+**Both suites are negative-tested.** Each was run against the implementation it
+replaced and fails on it — 6 of 12 and 6 of 17 respectively — so a green run means
+the behaviour is genuinely asserted rather than merely described. When you change
+`scripts/lib/redact.mjs` or the exit logic in `scripts/d360-diff.mjs`, confirm the
+suite still fails when you break the behaviour on purpose.
+
+The redaction suite is deliberately not scoped to known modules: it asserts that a
+criteria blob under a module nobody has written yet is still redacted. That reach
+is the property being protected, not the specific modules.
 
 ### The writability check and its fixtures
 

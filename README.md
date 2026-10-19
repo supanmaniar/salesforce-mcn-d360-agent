@@ -107,6 +107,9 @@ The `mc-next` and `data360-connect` families do not need this.
 | [scripts/sf-api.sh](scripts/sf-api.sh) | Authenticated REST calls via the CLI |
 | [scripts/sf-tenant-token.sh](scripts/sf-tenant-token.sh) | Mint a Connected App token for the Data 360 family |
 | [scripts/diagnose.sh](scripts/diagnose.sh) | Work out why a Data 360 call is failing |
+| [scripts/d360-snapshot.mjs](scripts/d360-snapshot.mjs) | Capture Data 360 config to a single JSON file |
+| [scripts/d360-diff.mjs](scripts/d360-diff.mjs) | Compare two snapshots and report config drift |
+| [scripts/lib/redact.mjs](scripts/lib/redact.mjs) | Hide literal filter values in a snapshot |
 | [scripts/validate.mjs](scripts/validate.mjs) | Repo integrity checks (runs in CI) |
 | [docs/CONNECTED-APP-SETUP.md](docs/CONNECTED-APP-SETUP.md) | Create the app the `data360` family needs |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Diagnosing 400s, 401s, and 404s |
@@ -193,6 +196,52 @@ sf data query --query "SELECT Id, Name FROM Account LIMIT 5" -o "$SF_TARGET_ORG"
 sf sobject describe -s Account -o "$SF_TARGET_ORG" --json
 sf org list limits -o "$SF_TARGET_ORG" --json
 ```
+
+---
+
+## Tracking configuration drift
+
+Capture a Data 360 org's configuration to one file, then compare captures later to see
+what changed — useful before a release, after a sandbox refresh, or as a CI gate.
+
+```bash
+# See what can be captured
+node scripts/d360-snapshot.mjs --list-modules
+
+# Capture everything
+node scripts/d360-snapshot.mjs --out snap-$(date +%F).json
+
+# Capture and hide literal filter values, so the file can be shared
+node scripts/d360-snapshot.mjs --redact --out shareable.json
+
+# Capture a subset
+node scripts/d360-snapshot.mjs --modules model,streams --out partial.json
+```
+
+Then compare two captures:
+
+```bash
+node scripts/d360-diff.mjs snap-monday.json snap-friday.json
+
+# Exit 1 on any drift, for CI
+node scripts/d360-diff.mjs snap-before.json snap-after.json --fail-on-change
+```
+
+Modules: `model`, `streams`, `segments`, `identity`, `graphs`, `dlos`, `spaces`.
+
+Two things worth knowing before you rely on this:
+
+- **`--redact` hides values, not structure.** Objects, fields and operators are kept, so a
+  diff still reports logic changes. Literal values such as `United States` become
+  `<redacted>`. The count of hidden values is printed, and
+  [scripts/test/redact.test.mjs](scripts/test/redact.test.mjs) proves the behaviour in CI —
+  this matters because a redacted file is one you are about to share.
+- **A diff is only as good as the capture.** `d360-diff.mjs` warns when a module was
+  captured on one side only, when the org, data space or redaction setting differs between
+  the two files, and when a capture was incomplete. Under `--fail-on-change` any of those
+  exits 1 as well: a comparison with no drift but an unsound basis is *not* a pass, because
+  a gate that goes green on an untrustworthy comparison is worse than no gate. The exit
+  contract is pinned by [scripts/test/diff.test.mjs](scripts/test/diff.test.mjs).
 
 ---
 
